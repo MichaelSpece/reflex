@@ -16,6 +16,13 @@ This deployment exports the frontend statically and serves it via a single HTTP
 port using Caddy. This is useful for platforms that only support a single port
 or where running a node server in the container is undesirable.
 
+## `export-split-runtime`
+
+A multi-stage build pattern that separates export work into Python-only and
+Node-only stages. This is useful when you want to avoid installing both
+runtimes in the same stage while still producing static frontend assets and a
+Python backend runtime image.
+
 ## `production-compose`
 
 This deployment is intended for use with a standalone VPS that is only hosting a
