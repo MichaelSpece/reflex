@@ -48,3 +48,13 @@ Still, keep these practical constraints in mind:
   need OS packages during build).
 - When building for multiple architectures, prefer `docker buildx build` so
   each stage is resolved for the target platform consistently.
+
+### Can Stage 2 copy only `.web` files that are not ignored by `.web/.gitignore`?
+
+Usually **yes**, because ignored paths in `.web/.gitignore` are typically
+generated artifacts (for example `node_modules/` and `build/`) that Stage 2
+recreates with `npm ci` and `npm run export`.
+
+That said, copying the full `.web` directory from Stage 1 is the most robust
+default: Reflex may add new required files over time, and a filtered copy can
+accidentally omit something the frontend build needs.
