@@ -64,7 +64,19 @@ Once you solve a current issue or improvement to Reflex, you can make a PR, and 
 
 Before submitting, a pull request, ensure the following steps are taken and test passing.
 
-In your `reflex` directory run make sure all the unit tests are still passing using the following command.
+In your `reflex` directory, you can run the full test startup script (unit + integration + benchmark + node-version tests) with:
+
+```bash
+bash scripts/run_all_tests.sh
+```
+
+The script installs dependencies, ensures a Playwright browser is available for integration tests, then runs `pytest` across the entire `tests/` tree. You can pass through any extra `pytest` flags, for example:
+
+```bash
+bash scripts/run_all_tests.sh --maxfail=1
+```
+
+If you only need the fast local check, make sure all the unit tests are still passing using the following command.
 This will fail if code coverage is below 70%.
 
 ```bash
