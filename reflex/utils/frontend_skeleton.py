@@ -231,6 +231,9 @@ def initialize_npmrc():
     if (custom_npmrc := Path(constants.Node.CONFIG_PATH)).exists():
         npmrc_content = custom_npmrc.read_text()
         console.info(f"Copying custom .npmrc inside {get_web_dir()} folder")
+    elif (home_npmrc := Path.home() / constants.Node.CONFIG_PATH).exists():
+        npmrc_content = home_npmrc.read_text()
+        console.info(f"Copying user .npmrc from {home_npmrc} inside {get_web_dir()} folder")
     else:
         best_registry = get_npm_registry()
         npmrc_content = constants.Node.DEFAULT_CONFIG.format(registry=best_registry)

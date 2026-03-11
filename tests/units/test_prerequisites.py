@@ -14,6 +14,7 @@ from reflex.utils.frontend_skeleton import (
     _compile_package_json,
     _compile_vite_config,
     _update_react_router_config,
+    initialize_npmrc,
 )
 from reflex.utils.rename import rename_imports_and_app_name
 from reflex.utils.telemetry import CpuInfo, get_cpu_info
@@ -348,3 +349,41 @@ app = rx.App()
 app.add_page(index)
 """
     )
+
+
+def test_initialize_npmrc_uses_user_home_npmrc(tmp_path, monkeypatch):
+    web_dir = tmp_path / "web"
+    web_dir.mkdir()
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    user_npmrc = home_dir / ".npmrc"
+    user_npmrc.write_text("registry=https://example.registry\n")
+
+    monkeypatch.setattr("reflex.utils.frontend_skeleton.get_web_dir", lambda: web_dir)
+    monkeypatch.setattr("pathlib.Path.home", lambda: home_dir)
+
+    with chdir(tmp_path):
+        initialize_npmrc()
+
+    assert (web_dir / ".npmrc").read_text() == "registry=https://example.registry\n"
+
+
+def test_initialize_npmrc_prefers_project_npmrc_over_home(tmp_path, monkeypatch):
+    web_dir = tmp_path / "web"
+    web_dir.mkdir()
+
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    (home_dir / ".npmrc").write_text("registry=https://home.registry\n")
+
+    project_npmrc = tmp_path / ".npmrc"
+    project_npmrc.write_text("registry=https://project.registry\n")
+
+    monkeypatch.setattr("reflex.utils.frontend_skeleton.get_web_dir", lambda: web_dir)
+    monkeypatch.setattr("pathlib.Path.home", lambda: home_dir)
+
+    with chdir(tmp_path):
+        initialize_npmrc()
+
+    assert (web_dir / ".npmrc").read_text() == "registry=https://project.registry\n"
