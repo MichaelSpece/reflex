@@ -64,17 +64,19 @@ Once you solve a current issue or improvement to Reflex, you can make a PR, and 
 
 Before submitting, a pull request, ensure the following steps are taken and test passing.
 
-In your `reflex` directory, you can run the full test startup script (unit + integration + benchmark + node-version tests) with:
+In your `reflex` directory, you can run the local CI startup script (selected Linux GitHub Actions jobs covering unit, integration, benchmark, and node-version checks) with:
 
 ```bash
 bash scripts/run_all_tests.sh
 ```
 
-The script installs dependencies, ensures a Playwright browser is available for integration tests, then runs `pytest` across the entire `tests/` tree. You can pass through any extra `pytest` flags, for example:
+The script uses `act` to run the actual workflow jobs locally instead of calling `pytest tests` directly. By default it runs the Linux / Python 3.13 slice of the unit and app-harness workflows, both split groups for the app-harness and node-latest workflows, and the benchmark workflow. Any extra arguments are forwarded to `act`, so you can inspect the selected jobs with:
 
 ```bash
-bash scripts/run_all_tests.sh --maxfail=1
+bash scripts/run_all_tests.sh -l
 ```
+
+Override `REFLEX_ACT_PLATFORM_LATEST` or `REFLEX_ACT_PLATFORM_22_04` if you want to force a specific runner image or self-hosted mapping.
 
 If you only need the fast local check, make sure all the unit tests are still passing using the following command.
 This will fail if code coverage is below 70%.
