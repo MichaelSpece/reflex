@@ -1,12 +1,29 @@
 """Custom build hook for Hatch."""
 
 import importlib.util
+import os
 import pathlib
 import subprocess
 import sys
 from typing import Any
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+
+def generator_environment(
+    root: pathlib.Path | str,
+    environment: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Construct the environment used to run Reflex's pyi generator."""
+    root = pathlib.Path(root).resolve()
+    env = dict(os.environ if environment is None else environment)
+    pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(root)
+        if not pythonpath
+        else os.pathsep.join((str(root), pythonpath))
+    )
+    return env
 
 
 class CustomBuilder(BuildHookInterface):
@@ -60,5 +77,7 @@ class CustomBuilder(BuildHookInterface):
         subprocess.run(
             [sys.executable, "-m", "reflex.utils.pyi_generator"],
             check=True,
+            cwd=self.root,
+            env=generator_environment(self.root),
         )
         self.marker().touch()
