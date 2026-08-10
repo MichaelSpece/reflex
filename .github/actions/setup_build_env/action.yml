@@ -37,6 +37,7 @@ runs:
         activate-environment: true
         cache-dependency-glob: "uv.lock"
     - name: Setup Node
+      if: vars.REFLEX_ACT_SELF_HOSTED != '1'
       uses: actions/setup-node@v4
       with:
         node-version: 22

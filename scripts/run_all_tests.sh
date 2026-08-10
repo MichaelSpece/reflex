@@ -28,6 +28,7 @@ Environment:
   REFLEX_ACT_PLATFORM_LATEST=...
   REFLEX_ACT_PLATFORM_22_04=...
   REFLEX_ACT_ALLOW_SELF_HOSTED=1           Run on the host when Docker is unavailable.
+                                            Skip container-backed and Node-latest variants.
   REFLEX_ACT_SELF_HOSTED_PRESERVE_HOST_ENV=1
                                             Keep host-only env vars in self-hosted mode.
   REFLEX_ACT_CACHE_ROOT=/path/to/cache      Override the cache/bootstrap directory.
@@ -121,6 +122,16 @@ require_runner_support() {
     return 0
   fi
 
+  if self_hosted_mode_enabled && [[ "${REFLEX_ACT_INTEGRATION_STATE_MANAGER:-memory}" != "memory" ]]; then
+    cat >&2 <<'EOF'
+Error: self-hosted mode without service containers supports only the memory state manager.
+
+Unset REFLEX_ACT_INTEGRATION_STATE_MANAGER or set it to memory. Redis-backed
+workflow variants require Docker and are skipped in self-hosted mode.
+EOF
+    exit 1
+  fi
+
   if docker_daemon_available || self_hosted_mode_enabled; then
     return 0
   fi
@@ -141,6 +152,7 @@ configure_platform_args() {
   if self_hosted_mode_enabled; then
     latest_platform="${REFLEX_ACT_PLATFORM_LATEST:--self-hosted}"
     ubuntu_2204_platform="${REFLEX_ACT_PLATFORM_22_04:--self-hosted}"
+    common_act_args+=(--var "REFLEX_ACT_SELF_HOSTED=1")
     echo "Warning: Docker unavailable or bypassed; using self-hosted act platform mapping." >&2
   else
     latest_platform="${REFLEX_ACT_PLATFORM_LATEST:-catthehacker/ubuntu:full-latest}"
@@ -184,7 +196,7 @@ configure_local_action_sources() {
   local action_specs=()
 
   local_repository_args=()
-  common_act_args=(
+  common_act_args+=(
     --action-cache-path "$ACT_RUNTIME_ROOT"
   )
 
@@ -364,10 +376,14 @@ if [[ "${REFLEX_ACT_SKIP_BENCHMARKS:-0}" != "1" ]]; then
     "benchmarks"
 fi
 
-for split_index in 1 2; do
-  run_job \
-    "check_node_latest.yml" \
-    "check_latest_node" \
-    "check-node-latest (split ${split_index})" \
-    --matrix "split_index:${split_index}"
-done
+if self_hosted_mode_enabled; then
+  echo "==> Skipping check-node-latest in self-hosted mode; it installs a separate Node runtime."
+else
+  for split_index in 1 2; do
+    run_job \
+      "check_node_latest.yml" \
+      "check_latest_node" \
+      "check-node-latest (split ${split_index})" \
+      --matrix "split_index:${split_index}"
+  done
+fi

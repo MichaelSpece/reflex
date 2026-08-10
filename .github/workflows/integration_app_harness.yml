@@ -33,7 +33,7 @@ jobs:
     services:
       # Label used to access the service container
       redis:
-        image: ${{ matrix.state_manager == 'redis' && 'redis' || '' }}
+        image: ${{ matrix.state_manager == 'redis' && vars.REFLEX_ACT_SELF_HOSTED != '1' && 'redis' || '' }}
         # Set health checks to wait until redis has started
         options: >-
           --health-cmd "redis-cli ping"
@@ -55,5 +55,5 @@ jobs:
 
       - name: Run app harness tests
         env:
-          REFLEX_REDIS_URL: ${{ matrix.state_manager == 'redis' && 'redis://localhost:6379' || '' }}
+          REFLEX_REDIS_URL: ${{ matrix.state_manager == 'redis' && vars.REFLEX_ACT_SELF_HOSTED != '1' && 'redis://localhost:6379' || '' }}
         run: uv run pytest tests/integration --reruns 3 -v --maxfail=5 --splits 2 --group ${{matrix.split_index}}
