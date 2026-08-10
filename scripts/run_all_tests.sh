@@ -7,9 +7,7 @@ PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
 
 REFLEX_ACT_CACHE_ROOT="${REFLEX_ACT_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/reflex-act}"
 ACT_RUNTIME_ROOT="${REFLEX_ACT_CACHE_ROOT}/runtime"
-ACT_INSTALL_ROOT="${REFLEX_ACT_CACHE_ROOT}/bin"
 ACT_LOCAL_REPOSITORY_ROOT="${REFLEX_ACT_CACHE_ROOT}/repositories"
-ACT_RUNNER_NODE_ROOT="${REFLEX_ACT_CACHE_ROOT}/node"
 
 show_help() {
   cat <<'EOF'
@@ -33,7 +31,7 @@ Environment:
   REFLEX_ACT_SELF_HOSTED_PRESERVE_HOST_ENV=1
                                             Keep host-only env vars in self-hosted mode.
   REFLEX_ACT_CACHE_ROOT=/path/to/cache      Override the cache/bootstrap directory.
-  REFLEX_ACT_NODE_MAJOR=22                  Override the self-hosted Node major version.
+  REFLEX_ACT_NODE_MAJOR=22                  Set the minimum self-hosted Node major version.
   REFLEX_ACT_DISABLE_UV_CACHE=1             Disable setup-uv cache for self-hosted act runs.
   REFLEX_ACT_SKIP_BENCHMARKS=1             Skip the benchmark workflow.
 EOF
@@ -73,95 +71,9 @@ require_python() {
   fi
 
   cat >&2 <<'EOF'
-Error: python3 is required to bootstrap act and Node for the local CI workflow script.
+Error: python3 is required to cache pinned GitHub Actions for the local CI workflow script.
 EOF
   exit 1
-}
-
-install_act_with_python() {
-  local target_dir="$ACT_INSTALL_ROOT"
-
-  require_python
-  mkdir -p "$target_dir"
-
-  "$PYTHON_BIN" - <<'PY' "$target_dir"
-from __future__ import annotations
-
-import io
-import json
-import os
-from pathlib import Path, PurePosixPath
-import platform
-import stat
-import tarfile
-import urllib.request
-import zipfile
-import sys
-
-
-target_dir = Path(sys.argv[1]).resolve()
-target_dir.mkdir(parents=True, exist_ok=True)
-target = target_dir / ("act.exe" if platform.system() == "Windows" else "act")
-if target.exists():
-    print(target)
-    raise SystemExit(0)
-
-system = platform.system()
-machine = platform.machine().lower()
-
-os_name = {
-    "Darwin": "Darwin",
-    "Linux": "Linux",
-    "Windows": "Windows",
-}[system]
-arch_name = {
-    "x86_64": "x86_64",
-    "amd64": "x86_64",
-    "aarch64": "arm64",
-    "arm64": "arm64",
-}.get(machine, machine)
-asset_name = (
-    f"act_{os_name}_{arch_name}.zip"
-    if system == "Windows"
-    else f"act_{os_name}_{arch_name}.tar.gz"
-)
-
-with urllib.request.urlopen("https://api.github.com/repos/nektos/act/releases/latest") as response:
-    release = json.load(response)
-
-asset = next((candidate for candidate in release["assets"] if candidate["name"] == asset_name), None)
-if asset is None:
-    raise RuntimeError(f"Unable to find a compatible act release asset for {asset_name!r}.")
-
-with urllib.request.urlopen(asset["browser_download_url"]) as response:
-    blob = response.read()
-
-if asset_name.endswith(".tar.gz"):
-    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
-        member = next(
-            candidate
-            for candidate in archive.getmembers()
-            if PurePosixPath(candidate.name).name == "act"
-        )
-        extracted = archive.extractfile(member)
-        if extracted is None:
-            raise RuntimeError("Unable to extract the act binary.")
-        target.write_bytes(extracted.read())
-else:
-    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-        member = next(
-            candidate for candidate in archive.namelist() if PurePosixPath(candidate).name == "act.exe"
-        )
-        target.write_bytes(archive.read(member))
-
-os.chmod(
-    target,
-    target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
-)
-print(target)
-PY
-
-  ACT_BIN="$target_dir/act"
 }
 
 ensure_act() {
@@ -187,7 +99,13 @@ ensure_act() {
     return 0
   fi
 
-  install_act_with_python
+  cat >&2 <<'EOF'
+Error: act is required to run Reflex GitHub Actions locally.
+
+Install act from https://nektosact.com/installation/ or set ACT_BIN to an
+existing executable. The test script does not download and execute tool binaries.
+EOF
+  exit 1
 }
 
 docker_daemon_available() {
@@ -244,127 +162,22 @@ ensure_runner_node() {
     return 0
   fi
 
-  if current_node_bin="$(command -v node 2>/dev/null || true)"; then
+  current_node_bin="$(command -v node 2>/dev/null || true)"
+  if [[ -n "$current_node_bin" ]]; then
     current_node_major="$("$current_node_bin" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
   fi
 
-  if [[ -n "$current_node_major" && "$current_node_major" =~ ^[0-9]+$ && "$current_node_major" -ge 20 ]]; then
+  if [[ -n "$current_node_major" && "$current_node_major" =~ ^[0-9]+$ && "$current_node_major" -ge "$desired_major" ]]; then
     return 0
   fi
 
-  require_python
-  mkdir -p "$ACT_RUNNER_NODE_ROOT"
+  cat >&2 <<EOF
+Error: Node.js ${desired_major} or newer is required for self-hosted act execution.
 
-  "$PYTHON_BIN" - <<'PY' "$ACT_RUNNER_NODE_ROOT" "$desired_major"
-from __future__ import annotations
-
-import io
-import json
-import os
-from pathlib import Path, PurePosixPath
-import platform
-import stat
-import tarfile
-import urllib.request
-import zipfile
-import sys
-
-
-install_root = Path(sys.argv[1]).resolve()
-desired_major = int(sys.argv[2])
-install_root.mkdir(parents=True, exist_ok=True)
-
-system = platform.system()
-machine = platform.machine().lower()
-
-os_name = {
-    "Darwin": "darwin",
-    "Linux": "linux",
-    "Windows": "win",
-}[system]
-arch_name = {
-    "x86_64": "x64",
-    "amd64": "x64",
-    "aarch64": "arm64",
-    "arm64": "arm64",
-}.get(machine, machine)
-
-with urllib.request.urlopen("https://nodejs.org/dist/index.json") as response:
-    versions = json.load(response)
-
-entry = next(
-    (candidate for candidate in versions if candidate["version"].startswith(f"v{desired_major}.")),
-    None,
-)
-if entry is None:
-    raise RuntimeError(f"Unable to find a Node.js release for major version {desired_major}.")
-
-version = entry["version"]
-target_dir = install_root / version
-node_binary = target_dir / ("node.exe" if system == "Windows" else "bin/node")
-if node_binary.exists():
-    print(target_dir)
-    raise SystemExit(0)
-
-asset_name = (
-    f"node-{version}-win-{arch_name}.zip"
-    if system == "Windows"
-    else f"node-{version}-{os_name}-{arch_name}.tar.xz"
-)
-url = f"https://nodejs.org/dist/{version}/{asset_name}"
-
-with urllib.request.urlopen(url) as response:
-    blob = response.read()
-
-target_dir.mkdir(parents=True, exist_ok=True)
-
-if asset_name.endswith(".tar.xz"):
-    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:xz") as archive:
-        members = archive.getmembers()
-        root_prefix = members[0].name.split("/", maxsplit=1)[0]
-        for member in members:
-            relative = PurePosixPath(member.name).relative_to(root_prefix)
-            if not relative.parts:
-                continue
-            destination = target_dir / Path(*relative.parts)
-            if member.isdir():
-                destination.mkdir(parents=True, exist_ok=True)
-                continue
-            if not member.isfile():
-                continue
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            extracted = archive.extractfile(member)
-            if extracted is None:
-                continue
-            destination.write_bytes(extracted.read())
-            os.chmod(destination, member.mode | stat.S_IRUSR | stat.S_IWUSR)
-else:
-    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-        root_prefix = PurePosixPath(archive.namelist()[0]).parts[0]
-        for member in archive.namelist():
-            relative = PurePosixPath(member).relative_to(root_prefix)
-            if not relative.parts:
-                continue
-            destination = target_dir / Path(*relative.parts)
-            if member.endswith("/"):
-                destination.mkdir(parents=True, exist_ok=True)
-                continue
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(archive.read(member))
-
-print(target_dir)
-PY
-
-  local node_root=""
-  node_root="$(find "$ACT_RUNNER_NODE_ROOT" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
-  if [[ -z "$node_root" || ! -x "$node_root/bin/node" ]]; then
-    cat >&2 <<'EOF'
-Error: failed to provision a modern Node.js runtime for self-hosted act execution.
+Install Node.js for this host and ensure node is on PATH. The test script does
+not download and execute tool binaries.
 EOF
-    exit 1
-  fi
-
-  export PATH="$node_root/bin:$PATH"
+  exit 1
 }
 
 configure_local_action_sources() {
@@ -384,13 +197,15 @@ configure_local_action_sources() {
   require_python
   mkdir -p "$ACT_LOCAL_REPOSITORY_ROOT"
 
-  action_specs+=("actions/checkout@v4=$ACT_LOCAL_REPOSITORY_ROOT/actions-checkout@v4")
-  action_specs+=("astral-sh/setup-uv@v6=$ACT_LOCAL_REPOSITORY_ROOT/astral-sh-setup-uv@v6")
-  action_specs+=("actions/setup-node@v4=$ACT_LOCAL_REPOSITORY_ROOT/actions-setup-node@v4")
-  action_specs+=("actions/setup-python@v5=$ACT_LOCAL_REPOSITORY_ROOT/actions-setup-python@v5")
+  # Keep the workflow-facing tag names, but materialize each action from an
+  # immutable commit so a moved tag cannot change the code executed locally.
+  action_specs+=("actions/checkout@v4|11d5960a326750d5838078e36cf38b85af677262|$ACT_LOCAL_REPOSITORY_ROOT/actions-checkout-11d5960a326750d5838078e36cf38b85af677262")
+  action_specs+=("astral-sh/setup-uv@v6|d0d8abe699bfb85fec6de9f7adb5ae17292296ff|$ACT_LOCAL_REPOSITORY_ROOT/astral-sh-setup-uv-d0d8abe699bfb85fec6de9f7adb5ae17292296ff")
+  action_specs+=("actions/setup-node@v4|49933ea5288caeca8642d1e84afbd3f7d6820020|$ACT_LOCAL_REPOSITORY_ROOT/actions-setup-node-49933ea5288caeca8642d1e84afbd3f7d6820020")
+  action_specs+=("actions/setup-python@v5|a26af69be951a213d495a4c3e4e4022e16d87065|$ACT_LOCAL_REPOSITORY_ROOT/actions-setup-python-a26af69be951a213d495a4c3e4e4022e16d87065")
 
   if [[ "${REFLEX_ACT_SKIP_BENCHMARKS:-0}" != "1" ]]; then
-    action_specs+=("CodSpeedHQ/action@v4=$ACT_LOCAL_REPOSITORY_ROOT/CodSpeedHQ-action@v4")
+    action_specs+=("CodSpeedHQ/action@v4|6e3823cc2539fc99a552b70a0cde2a5b40ab382a|$ACT_LOCAL_REPOSITORY_ROOT/CodSpeedHQ-action-6e3823cc2539fc99a552b70a0cde2a5b40ab382a")
   fi
 
   "$PYTHON_BIN" - <<'PY' "${action_specs[@]}"
@@ -404,8 +219,8 @@ import sys
 
 
 for spec in sys.argv[1:]:
-    repo_ref, target_dir_raw = spec.split("=", maxsplit=1)
-    repo_name, ref = repo_ref.split("@", maxsplit=1)
+    repo_ref, source_ref, target_dir_raw = spec.split("|", maxsplit=2)
+    repo_name, _ = repo_ref.split("@", maxsplit=1)
     target_dir = Path(target_dir_raw).resolve()
     action_yml = target_dir / "action.yml"
     action_yaml = target_dir / "action.yaml"
@@ -414,7 +229,7 @@ for spec in sys.argv[1:]:
 
     target_dir.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{repo_name}/tarball/{ref}",
+        f"https://api.github.com/repos/{repo_name}/tarball/{source_ref}",
         headers={"Accept": "application/vnd.github+json"},
     )
     with urllib.request.urlopen(request) as response:
@@ -427,7 +242,9 @@ for spec in sys.argv[1:]:
             relative = PurePosixPath(member.name).relative_to(root_prefix)
             if not relative.parts:
                 continue
-            destination = target_dir / Path(*relative.parts)
+            destination = (target_dir / Path(*relative.parts)).resolve()
+            if target_dir != destination and target_dir not in destination.parents:
+                raise RuntimeError(f"Refusing archive path outside {target_dir}: {member.name}")
             if member.isdir():
                 destination.mkdir(parents=True, exist_ok=True)
                 continue
@@ -442,7 +259,8 @@ PY
 
   common_act_args+=(--action-offline-mode)
   for spec in "${action_specs[@]}"; do
-    local_repository_args+=(--local-repository "$spec")
+    IFS='|' read -r repo_ref _ target_dir <<<"$spec"
+    local_repository_args+=(--local-repository "${repo_ref}=${target_dir}")
   done
 }
 
