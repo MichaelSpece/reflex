@@ -30,11 +30,14 @@ runs:
       uses: astral-sh/setup-uv@v6
       with:
         python-version: ${{ inputs.python-version }}
-        enable-cache: true
+        enable-cache: ${{ env.REFLEX_ACT_DISABLE_UV_CACHE == '1' && 'false' || 'true' }}
+        restore-cache: ${{ env.REFLEX_ACT_DISABLE_UV_CACHE == '1' && 'false' || 'true' }}
+        save-cache: ${{ env.REFLEX_ACT_DISABLE_UV_CACHE == '1' && 'false' || 'true' }}
         prune-cache: false
         activate-environment: true
         cache-dependency-glob: "uv.lock"
     - name: Setup Node
+      if: vars.REFLEX_ACT_SELF_HOSTED != '1'
       uses: actions/setup-node@v4
       with:
         node-version: 22

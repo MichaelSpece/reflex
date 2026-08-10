@@ -35,7 +35,7 @@ jobs:
     services:
       # Label used to access the service container
       redis:
-        image: ${{ matrix.os == 'ubuntu-latest' && 'redis' || '' }}
+        image: ${{ matrix.os == 'ubuntu-latest' && vars.REFLEX_ACT_SELF_HOSTED != '1' && 'redis' || '' }}
         # Set health checks to wait until redis has started
         options: >-
           --health-cmd "redis-cli ping"
@@ -57,13 +57,13 @@ jobs:
           export PYTHONUNBUFFERED=1
           uv run pytest tests/units --cov --no-cov-on-fail --cov-report=
       - name: Run unit tests w/ redis
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+        if: ${{ matrix.os == 'ubuntu-latest' && vars.REFLEX_ACT_SELF_HOSTED != '1' }}
         run: |
           export PYTHONUNBUFFERED=1
           export REFLEX_REDIS_URL=redis://localhost:6379
           uv run pytest tests/units --cov --no-cov-on-fail --cov-report=
       - name: Run unit tests w/ redis and OPLOCK_ENABLED
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+        if: ${{ matrix.os == 'ubuntu-latest' && vars.REFLEX_ACT_SELF_HOSTED != '1' }}
         run: |
           export PYTHONUNBUFFERED=1
           export REFLEX_REDIS_URL=redis://localhost:6379
